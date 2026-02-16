@@ -52,7 +52,7 @@ t1, t2 = st.tabs(["📤 Upload", "🔍 Search"])
 with t1:
     if not st.session_state.order:
         st.subheader("📦 Enter order #")
-        o = st.text_input("Order Number", key=f"o_{st.session_state.k}", placeholder="Order number likho...")
+        o = st.text_input("Order Number", key=f"o_{st.session_state.k}", placeholder="Order number ...")
         
         c1, c2 = st.columns(2)
         if c1.button("⏎ Enter", type="primary", use_container_width=True) and o.strip():
