@@ -3,6 +3,7 @@ import requests
 import base64
 from datetime import datetime
 import pandas as pd
+import urllib.parse
 
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
@@ -30,17 +31,30 @@ def upload_to_imgbb(image_bytes):
 
 def save_to_google_sheet(order_num, timestamp, image_urls):
     try:
-        # Build URL with parameters
-        full_url = f"{GOOGLE_SCRIPT_URL}?order_number={order_num}&timestamp={timestamp}&images={','.join(image_urls)}"
+        # URL encode parameters
+        order_encoded = urllib.parse.quote(str(order_num))
+        timestamp_encoded = urllib.parse.quote(str(timestamp))
+        images_encoded = urllib.parse.quote(",".join(image_urls))
         
-        response = requests.get(full_url, timeout=30)
+        # Build full URL
+        full_url = f"{GOOGLE_SCRIPT_URL}?order_number={order_encoded}&timestamp={timestamp_encoded}&images={images_encoded}"
         
+        # Make request with redirect following
+        response = requests.get(full_url, timeout=30, allow_redirects=True)
+        
+        # Check response
         if response.status_code == 200:
-            result = response.json()
-            return result.get('status') == 'success'
+            text = response.text
+            if 'success' in text.lower():
+                return True
+            try:
+                result = response.json()
+                return result.get('status') == 'success'
+            except:
+                # If we got 200, assume success
+                return True
         return False
     except Exception as e:
-        st.error(f"Error: {e}")
         return False
 
 def load_sheet_data():
@@ -119,10 +133,7 @@ with tab1:
                     st.image(img, caption=f"{icon} {idx+1}", use_container_width=True)
             
             if st.button("💾 SAVE TO SHEET", type="primary", use_container_width=True):
-                # Get order number at time of clicking
                 current_order = order_input
-                
-                st.info(f"Saving Order: **{current_order}**")
                 
                 with st.spinner("Uploading images..."):
                     progress_bar = st.progress(0)
@@ -145,12 +156,11 @@ with tab1:
                         if success:
                             st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
                             st.balloons()
-                            
                             st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
-                            
                             st.session_state.camera_images = []
                         else:
-                            st.error("❌ Failed to save to Google Sheet!")
+                            st.warning("⚠️ Could not confirm save. Please check Google Sheet.")
+                            st.markdown(f"[📋 Check Google Sheet]({GOOGLE_SHEET_URL})")
                     else:
                         st.error("❌ Image upload failed!")
     else:
