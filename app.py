@@ -23,49 +23,34 @@ def upload_img(img_bytes):
     p.save(buf, 'JPEG', quality=50)
     b64 = base64.b64encode(buf.getvalue()).decode()
     
-    # Try ImgBB first
     try:
         r = requests.post("https://api.imgbb.com/1/upload", 
             data={"key": "5d8c1750878fa4077dca7f25067822f1", "image": b64}, 
-            timeout=15)
+            timeout=30)
         if r.ok and r.json().get("success"):
             return r.json()["data"]["url"]
-    except:
-        pass
-    
-    # Backup: freeimage.host
-    try:
-        r = requests.post("https://freeimage.host/api/1/upload",
-            data={"key": "6d207e02198a847aa98d0a2a901485a5", "source": b64, "format": "json"},
-            timeout=15)
-        if r.ok and r.json().get("success"):
-            return r.json()["image"]["url"]
-    except:
-        pass
-    
-    return None
+        else:
+            return f"ERROR: {r.text[:100]}"
+    except Exception as e:
+        return f"EXCEPTION: {str(e)}"
 
-st.title("📷 Order Upload")
+st.title("📷 Order Upload - DEBUG")
 
 t1, t2 = st.tabs(["📤 Upload", "🔍 Search"])
 
 with t1:
     if not st.session_state.order:
-        st.subheader("📦 Enter order #")
-        o = st.text_input("Order Number", key=f"o_{st.session_state.k}", placeholder="Order number ...")
+        st.subheader("📦 Pehle Order Number Dalo")
+        o = st.text_input("Order Number", key=f"o_{st.session_state.k}")
         
-        c1, c2 = st.columns(2)
-        if c1.button("⏎ Enter", type="primary", use_container_width=True) and o.strip():
-            st.session_state.order = o.strip()
-            st.rerun()
-        if c2.button(f"💾 Save {o}" if o else "💾 Save", use_container_width=True) and o.strip():
+        if st.button("✅ OK", type="primary") and o.strip():
             st.session_state.order = o.strip()
             st.rerun()
     
     else:
         c1, c2 = st.columns([3,1])
         c1.success(f"📦 **{st.session_state.order}**")
-        if c2.button("🔄 New Order"):
+        if c2.button("🔄 New"):
             st.session_state.order = ""
             st.session_state.imgs = []
             st.session_state.k += 1
@@ -74,8 +59,8 @@ with t1:
         st.markdown("---")
         
         c1, c2 = st.columns(2)
-        cam = c1.camera_input("📸 Camera", key=f"c_{len(st.session_state.imgs)}_{st.session_state.k}")
-        files = c2.file_uploader("📁 Upload", type=['jpg','jpeg','png'], accept_multiple_files=True, key=f"f_{st.session_state.k}")
+        cam = c1.camera_input("📸", key=f"c_{len(st.session_state.imgs)}_{st.session_state.k}")
+        files = c2.file_uploader("📁", type=['jpg','jpeg','png'], accept_multiple_files=True, key=f"f_{st.session_state.k}")
         
         if cam and not any(x.getvalue() == cam.getvalue() for x in st.session_state.imgs):
             st.session_state.imgs.append(cam)
@@ -90,34 +75,52 @@ with t1:
                 cols[i%4].image(img, caption=i+1, use_container_width=True)
             
             c1, c2 = st.columns(2)
-            if c1.button("🗑️ Clear", use_container_width=True):
+            if c1.button("🗑️ Clear"):
                 st.session_state.imgs = []
                 st.rerun()
             
-            if c2.button(f"💾 SAVE {st.session_state.order}", type="primary", use_container_width=True):
+            if c2.button(f"💾 SAVE {st.session_state.order}", type="primary"):
+                st.write("---")
+                st.write("### 🔍 DEBUG:")
+                
                 urls = []
-                prog = st.progress(0)
                 
                 for i, img in enumerate(all_imgs):
-                    prog.progress((i+1)/len(all_imgs), f"⏳ {i+1}/{len(all_imgs)}")
-                    url = upload_img(img.getvalue())
-                    if url: urls.append(url)
+                    st.write(f"**Photo {i+1}:** Uploading...")
+                    result = upload_img(img.getvalue())
+                    st.write(f"Result: `{result}`")
+                    
+                    if result.startswith("http"):
+                        urls.append(result)
+                        st.write(f"✅ Success!")
+                    else:
+                        st.write(f"❌ Failed!")
+                
+                st.write("---")
+                st.write(f"**Total URLs:** {len(urls)}")
+                st.write(f"**URLs:** {urls}")
                 
                 if urls:
-                    requests.get(GURL, params={
+                    st.write("**Saving to Google Sheet...**")
+                    
+                    params = {
                         "order_number": st.session_state.order,
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                         "images": ",".join(urls)
-                    }, timeout=30)
+                    }
+                    st.write(f"Params: {params}")
                     
-                    st.success(f"✅ {len(urls)} photos saved for {st.session_state.order}!")
-                    st.balloons()
-                    st.session_state.order = ""
-                    st.session_state.imgs = []
-                    st.session_state.k += 1
-                    st.rerun()
+                    try:
+                        r = requests.get(GURL, params=params, timeout=30)
+                        st.write(f"Response: {r.text}")
+                        
+                        if "success" in r.text.lower():
+                            st.success(f"✅ SAVED!")
+                            st.balloons()
+                    except Exception as e:
+                        st.write(f"Error: {e}")
                 else:
-                    st.error("❌ Failed! Check internet.")
+                    st.error("❌ No URLs - upload failed!")
 
 with t2:
     if st.button("🔄 Refresh"): st.rerun()
