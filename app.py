@@ -22,24 +22,25 @@ SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTA
 # Initialize session state
 if 'camera_images' not in st.session_state:
     st.session_state.camera_images = []
+if 'order_number' not in st.session_state:
+    st.session_state.order_number = ""
+if 'form_key' not in st.session_state:
+    st.session_state.form_key = 0
 
 def compress_image(image_bytes, max_size_kb=400):
     """Compress image if too large"""
     try:
         img = Image.open(BytesIO(image_bytes))
         
-        # Convert to RGB if necessary
         if img.mode in ('RGBA', 'P'):
             img = img.convert('RGB')
         
-        # Resize if too large
         max_dimension = 1200
         if img.width > max_dimension or img.height > max_dimension:
             ratio = min(max_dimension/img.width, max_dimension/img.height)
             new_size = (int(img.width * ratio), int(img.height * ratio))
             img = img.resize(new_size, Image.LANCZOS)
         
-        # Compress
         quality = 75
         output = io.BytesIO()
         img.save(output, format='JPEG', quality=quality, optimize=True)
@@ -47,19 +48,14 @@ def compress_image(image_bytes, max_size_kb=400):
         output.seek(0)
         return output.read()
     except Exception as e:
-        st.warning(f"Compression warning: {e}")
         return image_bytes
 
 def upload_to_imgbb(image_bytes):
     """Upload image to ImgBB and return URL"""
     try:
-        # Compress image first
         compressed_bytes = compress_image(image_bytes)
-        
-        # Convert to base64
         base64_image = base64.b64encode(compressed_bytes).decode('utf-8')
         
-        # Upload to ImgBB
         payload = {
             "key": IMGBB_API_KEY,
             "image": base64_image
@@ -75,17 +71,8 @@ def upload_to_imgbb(image_bytes):
             result = response.json()
             if result.get("success"):
                 return result["data"]["url"]
-            else:
-                error_msg = result.get('error', {}).get('message', 'Unknown error')
-                st.error(f"ImgBB Error: {error_msg}")
-                return None
-        else:
-            st.error(f"ImgBB HTTP Error: {response.status_code}")
-            return None
-            
-    except requests.exceptions.Timeout:
-        st.error("⏱️ Upload timeout - try again")
         return None
+            
     except Exception as e:
         st.error(f"Upload error: {str(e)}")
         return None
@@ -103,9 +90,7 @@ def save_to_google_sheet(order_num, timestamp, image_urls):
         
         if "success" in response.text.lower():
             return True
-        else:
-            st.error(f"Google Sheet Error: {response.text[:200]}")
-            return False
+        return False
             
     except Exception as e:
         st.error(f"Sheet save error: {str(e)}")
@@ -116,13 +101,14 @@ def load_sheet_data():
     try:
         df = pd.read_csv(SHEET_CSV_URL)
         return df
-    except Exception as e:
-        st.error(f"Error loading sheet: {str(e)}")
+    except:
         return pd.DataFrame()
 
-def clear_camera_images():
-    """Clear all captured images"""
+def clear_form():
+    """Clear entire form"""
     st.session_state.camera_images = []
+    st.session_state.order_number = ""
+    st.session_state.form_key += 1
 
 # Main UI
 st.title("📷 Order Image Upload")
@@ -130,24 +116,36 @@ st.title("📷 Order Image Upload")
 tab1, tab2 = st.tabs(["📤 Upload Images", "🔍 Search Orders"])
 
 with tab1:
-    # Order number input
-    order_number = st.text_input("📦 Order Number", placeholder="Enter order number...")
+    # Clear Form button at top
+    col_clear, col_space = st.columns([1, 4])
+    with col_clear:
+        if st.button("🔄 NEW ORDER", type="secondary"):
+            clear_form()
+            st.rerun()
+    
+    # Order number input with dynamic key
+    order_number = st.text_input(
+        "📦 Order Number", 
+        value=st.session_state.order_number,
+        placeholder="Enter order number...",
+        key=f"order_input_{st.session_state.form_key}"
+    )
+    
+    # Update session state
+    st.session_state.order_number = order_number
     
     st.markdown("---")
     
-    # Two columns for camera and file upload
     col1, col2 = st.columns(2)
     
     with col1:
         st.subheader("📸 Camera")
         
-        # Dynamic camera key
-        camera_key = f"camera_{len(st.session_state.camera_images)}"
+        camera_key = f"camera_{len(st.session_state.camera_images)}_{st.session_state.form_key}"
         camera_image = st.camera_input("Take photo", key=camera_key)
         
         if camera_image:
             img_bytes = camera_image.getvalue()
-            # Check if this is a new image
             is_new = True
             for stored in st.session_state.camera_images:
                 if stored.getvalue() == img_bytes:
@@ -163,7 +161,8 @@ with tab1:
         uploaded_files = st.file_uploader(
             "Choose images",
             type=['jpg', 'jpeg', 'png', 'webp'],
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.form_key}"
         )
     
     st.markdown("---")
@@ -171,11 +170,9 @@ with tab1:
     # Combine all images
     all_images = []
     
-    # Add camera images
     for img in st.session_state.camera_images:
         all_images.append(("camera", img))
     
-    # Add uploaded files
     if uploaded_files:
         for f in uploaded_files:
             all_images.append(("file", f))
@@ -184,16 +181,14 @@ with tab1:
     if all_images:
         st.subheader(f"📋 Preview ({len(all_images)} images)")
         
-        # Display in grid
         cols = st.columns(4)
         for idx, (source, img) in enumerate(all_images):
             with cols[idx % 4]:
                 st.image(img, caption=f"{'📸' if source == 'camera' else '📁'} {idx + 1}", use_container_width=True)
         
-        # Clear camera images button
         if st.session_state.camera_images:
             if st.button("🗑️ Clear Camera Photos"):
-                clear_camera_images()
+                st.session_state.camera_images = []
                 st.rerun()
     
     st.markdown("---")
@@ -205,7 +200,6 @@ with tab1:
         elif not all_images:
             st.error("⚠️ Please add at least one image!")
         else:
-            # Upload images
             image_urls = []
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -226,8 +220,11 @@ with tab1:
                 
                 if save_to_google_sheet(order_number.strip(), timestamp, image_urls):
                     st.success(f"✅ Successfully saved {len(image_urls)} images for order {order_number}!")
-                    clear_camera_images()
                     st.balloons()
+                    
+                    # Clear form after successful save
+                    clear_form()
+                    st.rerun()
                 else:
                     st.error("❌ Failed to save to Google Sheet!")
             else:
