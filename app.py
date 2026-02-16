@@ -6,6 +6,7 @@ import pandas as pd
 from PIL import Image
 from io import BytesIO
 import io
+import time
 
 st.set_page_config(page_title="Order Image Upload", page_icon="📷", layout="wide")
 
@@ -21,28 +22,56 @@ if 'form_key' not in st.session_state:
     st.session_state.form_key = 0
 
 def compress_image(image_bytes):
-    img = Image.open(BytesIO(image_bytes))
-    if img.mode in ('RGBA', 'P'):
-        img = img.convert('RGB')
-    if img.width > 800 or img.height > 800:
-        ratio = min(800/img.width, 800/img.height)
-        img = img.resize((int(img.width*ratio), int(img.height*ratio)), Image.LANCZOS)
-    output = io.BytesIO()
-    img.save(output, format='JPEG', quality=50)
-    output.seek(0)
-    return output.read()
+    try:
+        img = Image.open(BytesIO(image_bytes))
+        if img.mode in ('RGBA', 'P'):
+            img = img.convert('RGB')
+        # Resize to smaller size for faster upload
+        img.thumbnail((600, 600), Image.LANCZOS)
+        output = io.BytesIO()
+        img.save(output, format='JPEG', quality=40)
+        output.seek(0)
+        return output.read()
+    except:
+        return image_bytes
 
-def upload_to_imgbb(image_bytes):
-    compressed = compress_image(image_bytes)
-    b64 = base64.b64encode(compressed).decode('utf-8')
-    resp = requests.post("https://api.imgbb.com/1/upload", data={"key": IMGBB_API_KEY, "image": b64}, timeout=120)
-    if resp.status_code == 200 and resp.json().get("success"):
-        return resp.json()["data"]["url"]
+def upload_to_imgbb(image_bytes, retry=3):
+    for attempt in range(retry):
+        try:
+            compressed = compress_image(image_bytes)
+            b64 = base64.b64encode(compressed).decode('utf-8')
+            
+            resp = requests.post(
+                "https://api.imgbb.com/1/upload",
+                data={"key": IMGBB_API_KEY, "image": b64},
+                timeout=60
+            )
+            
+            if resp.status_code == 200:
+                data = resp.json()
+                if data.get("success"):
+                    return data["data"]["url"]
+            
+            # Wait before retry
+            time.sleep(2)
+            
+        except Exception as e:
+            time.sleep(2)
+            continue
+    
     return None
 
 def save_to_sheet(order, urls):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    requests.get(GOOGLE_SCRIPT_URL, params={"order_number": order, "timestamp": ts, "images": ",".join(urls)}, timeout=60)
+    try:
+        requests.get(GOOGLE_SCRIPT_URL, params={
+            "order_number": order,
+            "timestamp": ts,
+            "images": ",".join(urls)
+        }, timeout=60)
+        return True
+    except:
+        return False
 
 def clear_form():
     st.session_state.camera_images = []
@@ -124,23 +153,33 @@ with tab1:
                     
                     urls = []
                     total = len(all_imgs)
+                    failed = 0
                     
                     for i, img in enumerate(all_imgs):
-                        status.text(f"⏳ Uploading {i+1}/{total}...")
-                        url = upload_to_imgbb(img.getvalue())
+                        status.text(f"⏳ Uploading {i+1}/{total}... (retry if fail)")
+                        url = upload_to_imgbb(img.getvalue(), retry=3)
+                        
                         if url:
                             urls.append(url)
+                        else:
+                            failed += 1
+                        
                         progress.progress((i+1)/total)
                     
                     if urls:
-                        status.text("💾 Saving...")
+                        status.text("💾 Saving to sheet...")
                         save_to_sheet(st.session_state.confirmed_order, urls)
-                        st.success(f"✅ Saved {len(urls)} photos for **{st.session_state.confirmed_order}**")
+                        
+                        if failed > 0:
+                            st.warning(f"⚠️ {failed} photo(s) failed, {len(urls)} saved for **{st.session_state.confirmed_order}**")
+                        else:
+                            st.success(f"✅ All {len(urls)} photos saved for **{st.session_state.confirmed_order}**")
+                        
                         st.balloons()
                         clear_form()
                         st.rerun()
                     else:
-                        st.error("❌ Upload failed!")
+                        st.error("❌ All uploads failed! Check internet connection.")
 
 with tab2:
     st.subheader("🔍 Search Orders")
@@ -162,9 +201,9 @@ with tab2:
         
         for _, row in fdf.iterrows():
             order = str(row.iloc[0])
-            time = str(row.iloc[1]) if len(row) > 1 else ""
+            time_str = str(row.iloc[1]) if len(row) > 1 else ""
             
-            with st.expander(f"📦 {order} | {time}"):
+            with st.expander(f"📦 {order} | {time_str}"):
                 urls = [str(row.iloc[i]) for i in range(2, len(row)) if str(row.iloc[i]).startswith('http')]
                 if urls:
                     cols = st.columns(4)
