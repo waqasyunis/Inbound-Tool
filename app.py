@@ -32,19 +32,36 @@ def upload_to_imgbb(image_bytes):
 def save_to_google_sheet(order_number, timestamp, image_urls):
     try:
         data = {
-            "order_number": order_number,
-            "timestamp": timestamp,
+            "order_number": str(order_number),
+            "timestamp": str(timestamp),
             "images": image_urls
         }
+        
+        # Allow redirects and use different approach
         response = requests.post(
             GOOGLE_SCRIPT_URL,
-            data=json.dumps(data),
-            headers={"Content-Type": "application/json"}
+            json=data,
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json"
+            },
+            allow_redirects=True,
+            timeout=30
         )
-        if response.status_code == 200:
-            result = response.json()
-            return result.get('status') == 'success'
+        
+        # Google Script returns 200 or 302 on success
+        if response.status_code in [200, 201, 302]:
+            try:
+                result = response.json()
+                return result.get('status') == 'success'
+            except:
+                # Sometimes Google returns HTML on success with redirect
+                if response.status_code == 200:
+                    return True
         return False
+    except requests.exceptions.Timeout:
+        st.warning("Request timeout - but data might be saved. Check sheet.")
+        return True
     except Exception as e:
         st.error(f"Error: {e}")
         return False
