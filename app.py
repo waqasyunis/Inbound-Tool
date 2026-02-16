@@ -8,9 +8,7 @@ import json
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/edit"
-
-# YAHAN APNA GOOGLE APPS SCRIPT WEB APP URL DAALEIN
-GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID_HERE/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbz0whVgOYXeNFRNAL3FWSreJZiA83AXmbBuaiNyv3hwEciT-cNK5ezAk4UhdUQhgPrw/exec"
 
 st.set_page_config(page_title="Order Image Tool", page_icon="📸", layout="centered")
 
