@@ -7,7 +7,7 @@ import pandas as pd
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/edit"
-GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbxr8ln0ybYa1jMYARnhEybCH4EvXV46CplDA-zVoqVRoAJGTxwGZr5-FsLEv5elsClT/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbxr7XlctBd6fQLEkCe-8NBVO66UqzQjlqa3VAHUpGRkWth0ZcE0qCnCiLS_uw-j43Fx/exec"
 
 st.set_page_config(page_title="Order Image Tool", page_icon="📸", layout="centered")
 
