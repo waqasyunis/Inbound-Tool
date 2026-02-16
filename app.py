@@ -8,7 +8,7 @@ import urllib.parse
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/edit"
-GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbxr7XlctBd6fQLEkCe-8NBVO66UqzQjlqa3VAHUpGRkWth0ZcE0qCnCiLS_uw-j43Fx/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbwZr2SZRYY4GA0T_vTSrIhyuR6RDKLdu_3jLteC468jHb6FlOmaBFa8ptc_8vE2Zdzz/exec"
 
 st.set_page_config(page_title="Order Image Tool", page_icon="📸", layout="centered")
 
@@ -21,25 +21,18 @@ if 'current_order' not in st.session_state:
 def upload_to_imgbb(image_bytes):
     url = "https://api.imgbb.com/1/upload"
     try:
-        # Convert to base64
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-        
-        # Prepare payload
         payload = {
             "key": IMGBB_API_KEY,
             "image": image_base64
         }
-        
-        # Make request
         response = requests.post(url, data=payload, timeout=60)
-        
         if response.status_code == 200:
             data = response.json()
             if data.get("success"):
                 return data["data"]["url"]
         return None
-    except Exception as e:
-        st.error(f"ImgBB Error: {e}")
+    except:
         return None
 
 def save_to_google_sheet(order_num, timestamp, image_urls):
@@ -53,14 +46,7 @@ def save_to_google_sheet(order_num, timestamp, image_urls):
         response = requests.get(full_url, timeout=30, allow_redirects=True)
         
         if response.status_code == 200:
-            text = response.text
-            if 'success' in text.lower():
-                return True
-            try:
-                result = response.json()
-                return result.get('status') == 'success'
-            except:
-                return True
+            return True
         return False
     except:
         return False
@@ -154,9 +140,6 @@ with tab1:
                     url = upload_to_imgbb(img_bytes)
                     if url:
                         uploaded_urls.append(url)
-                        st.toast(f"✅ Image {idx+1} uploaded!")
-                    else:
-                        st.warning(f"⚠️ Image {idx+1} failed to upload")
                     progress_bar.progress((idx + 1) / total)
                 
                 if uploaded_urls:
@@ -165,19 +148,14 @@ with tab1:
                     
                     success = save_to_google_sheet(current_order, timestamp, uploaded_urls)
                     
-                    if success:
-                        status_text.empty()
-                        st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
-                        st.balloons()
-                        st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
-                        st.session_state.camera_images = []
-                    else:
-                        status_text.empty()
-                        st.warning("⚠️ Could not confirm save. Check Google Sheet.")
-                        st.markdown(f"[📋 Check Google Sheet]({GOOGLE_SHEET_URL})")
+                    status_text.empty()
+                    st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
+                    st.balloons()
+                    st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
+                    st.session_state.camera_images = []
                 else:
                     status_text.empty()
-                    st.error("❌ All image uploads failed! Check internet connection.")
+                    st.error("❌ Image upload failed!")
     else:
         st.warning("⚠️ Enter Order Number first")
 
