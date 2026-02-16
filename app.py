@@ -20,29 +20,38 @@ if 'current_order' not in st.session_state:
 
 def upload_to_imgbb(image_bytes):
     url = "https://api.imgbb.com/1/upload"
-    payload = {"key": IMGBB_API_KEY, "image": base64.b64encode(image_bytes).decode('utf-8')}
     try:
-        response = requests.post(url, payload)
+        # Convert to base64
+        image_base64 = base64.b64encode(image_bytes).decode('utf-8')
+        
+        # Prepare payload
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": image_base64
+        }
+        
+        # Make request
+        response = requests.post(url, data=payload, timeout=60)
+        
         if response.status_code == 200:
-            return response.json()["data"]["url"]
+            data = response.json()
+            if data.get("success"):
+                return data["data"]["url"]
         return None
-    except:
+    except Exception as e:
+        st.error(f"ImgBB Error: {e}")
         return None
 
 def save_to_google_sheet(order_num, timestamp, image_urls):
     try:
-        # URL encode parameters
         order_encoded = urllib.parse.quote(str(order_num))
         timestamp_encoded = urllib.parse.quote(str(timestamp))
         images_encoded = urllib.parse.quote(",".join(image_urls))
         
-        # Build full URL
         full_url = f"{GOOGLE_SCRIPT_URL}?order_number={order_encoded}&timestamp={timestamp_encoded}&images={images_encoded}"
         
-        # Make request with redirect following
         response = requests.get(full_url, timeout=30, allow_redirects=True)
         
-        # Check response
         if response.status_code == 200:
             text = response.text
             if 'success' in text.lower():
@@ -51,10 +60,9 @@ def save_to_google_sheet(order_num, timestamp, image_urls):
                 result = response.json()
                 return result.get('status') == 'success'
             except:
-                # If we got 200, assume success
                 return True
         return False
-    except Exception as e:
+    except:
         return False
 
 def load_sheet_data():
@@ -135,34 +143,41 @@ with tab1:
             if st.button("💾 SAVE TO SHEET", type="primary", use_container_width=True):
                 current_order = order_input
                 
-                with st.spinner("Uploading images..."):
-                    progress_bar = st.progress(0)
-                    uploaded_urls = []
-                    total = len(all_images)
-                    
-                    for idx, (source, img) in enumerate(all_images):
-                        img_bytes = img.getvalue()
-                        url = upload_to_imgbb(img_bytes)
-                        if url:
-                            uploaded_urls.append(url)
-                        progress_bar.progress((idx + 1) / total)
-                    
-                    if uploaded_urls:
-                        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        
-                        with st.spinner("Saving to Google Sheet..."):
-                            success = save_to_google_sheet(current_order, timestamp, uploaded_urls)
-                        
-                        if success:
-                            st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
-                            st.balloons()
-                            st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
-                            st.session_state.camera_images = []
-                        else:
-                            st.warning("⚠️ Could not confirm save. Please check Google Sheet.")
-                            st.markdown(f"[📋 Check Google Sheet]({GOOGLE_SHEET_URL})")
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+                uploaded_urls = []
+                total = len(all_images)
+                
+                for idx, (source, img) in enumerate(all_images):
+                    status_text.text(f"Uploading image {idx+1} of {total}...")
+                    img_bytes = img.getvalue()
+                    url = upload_to_imgbb(img_bytes)
+                    if url:
+                        uploaded_urls.append(url)
+                        st.toast(f"✅ Image {idx+1} uploaded!")
                     else:
-                        st.error("❌ Image upload failed!")
+                        st.warning(f"⚠️ Image {idx+1} failed to upload")
+                    progress_bar.progress((idx + 1) / total)
+                
+                if uploaded_urls:
+                    status_text.text("Saving to Google Sheet...")
+                    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    
+                    success = save_to_google_sheet(current_order, timestamp, uploaded_urls)
+                    
+                    if success:
+                        status_text.empty()
+                        st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
+                        st.balloons()
+                        st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
+                        st.session_state.camera_images = []
+                    else:
+                        status_text.empty()
+                        st.warning("⚠️ Could not confirm save. Check Google Sheet.")
+                        st.markdown(f"[📋 Check Google Sheet]({GOOGLE_SHEET_URL})")
+                else:
+                    status_text.empty()
+                    st.error("❌ All image uploads failed! Check internet connection.")
     else:
         st.warning("⚠️ Enter Order Number first")
 
