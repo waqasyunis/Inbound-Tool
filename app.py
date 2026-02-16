@@ -3,7 +3,6 @@ import requests
 import base64
 from datetime import datetime
 import pandas as pd
-import urllib.parse
 
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
@@ -19,13 +18,10 @@ if 'current_order' not in st.session_state:
     st.session_state.current_order = ""
 
 def upload_to_imgbb(image_bytes):
-    url = "https://api.imgbb.com/1/upload"
     try:
+        url = "https://api.imgbb.com/1/upload"
         image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-        payload = {
-            "key": IMGBB_API_KEY,
-            "image": image_base64
-        }
+        payload = {"key": IMGBB_API_KEY, "image": image_base64}
         response = requests.post(url, data=payload, timeout=60)
         if response.status_code == 200:
             data = response.json()
@@ -37,24 +33,19 @@ def upload_to_imgbb(image_bytes):
 
 def save_to_google_sheet(order_num, timestamp, image_urls):
     try:
-        order_encoded = urllib.parse.quote(str(order_num))
-        timestamp_encoded = urllib.parse.quote(str(timestamp))
-        images_encoded = urllib.parse.quote(",".join(image_urls))
-        
-        full_url = f"{GOOGLE_SCRIPT_URL}?order_number={order_encoded}&timestamp={timestamp_encoded}&images={images_encoded}"
-        
-        response = requests.get(full_url, timeout=30, allow_redirects=True)
-        
-        if response.status_code == 200:
-            return True
-        return False
+        params = {
+            "order_number": order_num,
+            "timestamp": timestamp,
+            "images": ",".join(image_urls)
+        }
+        response = requests.get(GOOGLE_SCRIPT_URL, params=params, timeout=30)
+        return response.status_code == 200
     except:
         return False
 
 def load_sheet_data():
     try:
-        df = pd.read_csv(SHEET_CSV_URL)
-        return df
+        return pd.read_csv(SHEET_CSV_URL)
     except:
         return pd.DataFrame()
 
@@ -68,7 +59,7 @@ tab1, tab2 = st.tabs(["📤 Upload Images", "🔍 Search Orders"])
 
 with tab1:
     st.header("Upload Images")
-    order_input = st.text_input("📦 Order Number", placeholder="Enter order number...", key="order_input")
+    order_input = st.text_input("📦 Order Number", placeholder="Enter order number...")
     
     if order_input != st.session_state.current_order:
         st.session_state.current_order = order_input
@@ -80,106 +71,74 @@ with tab1:
         col1, col2 = st.columns(2)
         
         with col1:
-            st.markdown("#### 📸 Camera (Multiple Photos)")
-            
+            st.markdown("#### 📸 Camera")
             if st.session_state.camera_images:
-                st.info(f"📷 {len(st.session_state.camera_images)} photo(s) captured")
+                st.info(f"📷 {len(st.session_state.camera_images)} photo(s)")
             
-            camera_key = f"camera_{len(st.session_state.camera_images)}"
-            camera_image = st.camera_input("Take photo", key=camera_key)
+            camera_image = st.camera_input("Take photo", key=f"cam_{len(st.session_state.camera_images)}")
             
-            if camera_image is not None:
+            if camera_image:
                 img_bytes = camera_image.getvalue()
-                if not any(stored.getvalue() == img_bytes for stored in st.session_state.camera_images):
+                if not any(s.getvalue() == img_bytes for s in st.session_state.camera_images):
                     st.session_state.camera_images.append(camera_image)
                     st.rerun()
             
-            if st.session_state.camera_images:
-                if st.button("🗑️ Clear All Photos", type="secondary"):
-                    clear_camera_images()
-                    st.rerun()
+            if st.session_state.camera_images and st.button("🗑️ Clear Photos"):
+                clear_camera_images()
+                st.rerun()
         
         with col2:
-            st.markdown("#### 📁 Upload Files")
-            uploaded_files = st.file_uploader(
-                "Choose images", 
-                type=['png', 'jpg', 'jpeg'], 
-                accept_multiple_files=True
-            )
+            st.markdown("#### 📁 Upload")
+            uploaded_files = st.file_uploader("Choose images", type=['png', 'jpg', 'jpeg'], accept_multiple_files=True)
         
-        all_images = []
-        
-        for img in st.session_state.camera_images:
-            all_images.append(("camera", img))
-        
+        all_images = [(img, "cam") for img in st.session_state.camera_images]
         if uploaded_files:
-            for file in uploaded_files:
-                all_images.append(("upload", file))
+            all_images += [(f, "file") for f in uploaded_files]
         
         if all_images:
-            st.markdown("### 👁️ Preview:")
-            st.write(f"**Total: {len(all_images)}** (📷 {len(st.session_state.camera_images)} | 📁 {len(uploaded_files) if uploaded_files else 0})")
-            
+            st.markdown(f"### 👁️ Preview ({len(all_images)} images)")
             cols = st.columns(min(len(all_images), 4))
-            for idx, (source, img) in enumerate(all_images):
+            for idx, (img, src) in enumerate(all_images):
                 with cols[idx % 4]:
-                    icon = "📷" if source == "camera" else "📁"
-                    st.image(img, caption=f"{icon} {idx+1}", use_container_width=True)
+                    st.image(img, caption=f"{'📷' if src == 'cam' else '📁'} {idx+1}", use_container_width=True)
             
             if st.button("💾 SAVE TO SHEET", type="primary", use_container_width=True):
-                current_order = order_input
+                progress = st.progress(0)
+                urls = []
                 
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                uploaded_urls = []
-                total = len(all_images)
-                
-                for idx, (source, img) in enumerate(all_images):
-                    status_text.text(f"Uploading image {idx+1} of {total}...")
-                    img_bytes = img.getvalue()
-                    url = upload_to_imgbb(img_bytes)
+                for idx, (img, _) in enumerate(all_images):
+                    url = upload_to_imgbb(img.getvalue())
                     if url:
-                        uploaded_urls.append(url)
-                    progress_bar.progress((idx + 1) / total)
+                        urls.append(url)
+                    progress.progress((idx + 1) / len(all_images))
                 
-                if uploaded_urls:
-                    status_text.text("Saving to Google Sheet...")
+                if urls:
                     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    
-                    success = save_to_google_sheet(current_order, timestamp, uploaded_urls)
-                    
-                    status_text.empty()
-                    st.success(f"✅ Order **{current_order}** - {len(uploaded_urls)} images saved!")
+                    save_to_google_sheet(order_input, timestamp, urls)
+                    st.success(f"✅ Order **{order_input}** - {len(urls)} images saved!")
                     st.balloons()
-                    st.markdown(f"[📋 View Google Sheet]({GOOGLE_SHEET_URL})")
+                    st.markdown(f"[📋 View Sheet]({GOOGLE_SHEET_URL})")
                     st.session_state.camera_images = []
                 else:
-                    status_text.empty()
-                    st.error("❌ Image upload failed!")
+                    st.error("❌ Upload failed!")
     else:
         st.warning("⚠️ Enter Order Number first")
 
 with tab2:
-    st.header("Search Order Images")
-    search_order = st.text_input("🔍 Search Order Number", placeholder="Enter order to search...")
+    st.header("Search Orders")
+    search = st.text_input("🔍 Order Number", placeholder="Search...")
     
-    if st.button("Search", type="primary"):
-        if search_order:
-            df = load_sheet_data()
-            if not df.empty:
-                order_df = df[df['Order_Number'].astype(str) == str(search_order)]
-                if not order_df.empty:
-                    st.success(f"✅ Found Order #{search_order}")
-                    st.dataframe(order_df)
-                else:
-                    st.warning(f"⚠️ No data found for Order #{search_order}")
-            else:
-                st.warning("No data in sheet")
-    
-    st.markdown("---")
-    if st.button("📊 Load All Orders"):
+    if st.button("Search", type="primary") and search:
         df = load_sheet_data()
         if not df.empty:
-            st.dataframe(df, use_container_width=True)
-        else:
-            st.warning("No data found")
+            result = df[df['Order_Number'].astype(str) == search]
+            if not result.empty:
+                st.success(f"✅ Found Order #{search}")
+                st.dataframe(result)
+            else:
+                st.warning("⚠️ Not found")
+    
+    if st.button("📊 All Orders"):
+        df = load_sheet_data()
+        if not df.empty:
+            st.dataframe(df)
