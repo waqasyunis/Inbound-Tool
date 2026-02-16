@@ -51,7 +51,7 @@ t1, t2 = st.tabs(["📤 Upload", "🔍 Search"])
 
 with t1:
     if not st.session_state.order:
-        st.subheader("📦 Pehle Order Number Dalo")
+        st.subheader("📦 Enter order #")
         o = st.text_input("Order Number", key=f"o_{st.session_state.k}", placeholder="Order number likho...")
         
         c1, c2 = st.columns(2)
