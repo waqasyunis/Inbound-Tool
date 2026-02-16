@@ -3,12 +3,11 @@ import requests
 import base64
 from datetime import datetime
 import pandas as pd
-import json
 
 IMGBB_API_KEY = "5d8c1750878fa4077dca7f25067822f1"
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
 GOOGLE_SHEET_URL = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/edit"
-GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbz0whVgOYXeNFRNAL3FWSreJZiA83AXmbBuaiNyv3hwEciT-cNK5ezAk4UhdUQhgPrw/exec"
+GOOGLE_SCRIPT_URL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbxr8ln0ybYa1jMYARnhEybCH4EvXV46CplDA-zVoqVRoAJGTxwGZr5-FsLEv5elsClT/exec"
 
 st.set_page_config(page_title="Order Image Tool", page_icon="📸", layout="centered")
 
@@ -31,39 +30,23 @@ def upload_to_imgbb(image_bytes):
 
 def save_to_google_sheet(order_number, timestamp, image_urls):
     try:
-        data = {
+        params = {
             "order_number": str(order_number),
             "timestamp": str(timestamp),
-            "images": image_urls
+            "images": ",".join(image_urls)
         }
         
-        # Allow redirects and use different approach
-        response = requests.post(
-            GOOGLE_SCRIPT_URL,
-            json=data,
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json"
-            },
-            allow_redirects=True,
-            timeout=30
-        )
+        response = requests.get(GOOGLE_SCRIPT_URL, params=params, timeout=30)
         
-        # Google Script returns 200 or 302 on success
-        if response.status_code in [200, 201, 302]:
+        if response.status_code == 200:
             try:
                 result = response.json()
                 return result.get('status') == 'success'
             except:
-                # Sometimes Google returns HTML on success with redirect
-                if response.status_code == 200:
-                    return True
+                return True
         return False
-    except requests.exceptions.Timeout:
-        st.warning("Request timeout - but data might be saved. Check sheet.")
-        return True
-    except Exception as e:
-        st.error(f"Error: {e}")
+        
+    except:
         return False
 
 def load_sheet_data():
