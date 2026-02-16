@@ -6,11 +6,9 @@ from PIL import Image
 from io import BytesIO
 import io
 import pandas as pd
-import time
 
 st.set_page_config(page_title="Order Upload", page_icon="📷", layout="wide")
 
-KEY = "5d8c1750878fa4077dca7f25067822f1"
 GURL = "https://script.google.com/a/macros/joinfleek.com/s/AKfycbxh_P5lLxoySjhqpQUPXofTttIRTkBHub1pGPKKtGaYHmdOSnjGZMzaqzv1JJ27jDab/exec"
 SHEET = "https://docs.google.com/spreadsheets/d/1EArwRntG-s-fLzmslqoKTTAyVAmXpyn7DaiBtCUCS9g/export?format=csv"
 
@@ -19,23 +17,32 @@ if 'order' not in st.session_state: st.session_state.order = ""
 if 'k' not in st.session_state: st.session_state.k = 0
 
 def upload_img(img_bytes):
-    # Very small image for fast upload
     p = Image.open(BytesIO(img_bytes)).convert('RGB')
-    p.thumbnail((300, 300))  # Smaller size
+    p.thumbnail((400, 400))
     buf = io.BytesIO()
-    p.save(buf, 'JPEG', quality=20)  # Lower quality
+    p.save(buf, 'JPEG', quality=50)
     b64 = base64.b64encode(buf.getvalue()).decode()
     
-    # Try 3 times
-    for i in range(3):
-        try:
-            r = requests.post("https://api.imgbb.com/1/upload", 
-                data={"key": KEY, "image": b64}, 
-                timeout=60)
-            if r.ok and r.json().get("success"):
-                return r.json()["data"]["url"]
-        except:
-            time.sleep(1)
+    # Try ImgBB first
+    try:
+        r = requests.post("https://api.imgbb.com/1/upload", 
+            data={"key": "5d8c1750878fa4077dca7f25067822f1", "image": b64}, 
+            timeout=15)
+        if r.ok and r.json().get("success"):
+            return r.json()["data"]["url"]
+    except:
+        pass
+    
+    # Backup: freeimage.host
+    try:
+        r = requests.post("https://freeimage.host/api/1/upload",
+            data={"key": "6d207e02198a847aa98d0a2a901485a5", "source": b64, "format": "json"},
+            timeout=15)
+        if r.ok and r.json().get("success"):
+            return r.json()["image"]["url"]
+    except:
+        pass
+    
     return None
 
 st.title("📷 Order Upload")
@@ -44,17 +51,21 @@ t1, t2 = st.tabs(["📤 Upload", "🔍 Search"])
 
 with t1:
     if not st.session_state.order:
-        st.subheader("📦 Enter Order Number First")
-        o = st.text_input("Order Number", key=f"ord_{st.session_state.k}")
+        st.subheader("📦 Pehle Order Number Dalo")
+        o = st.text_input("Order Number", key=f"o_{st.session_state.k}", placeholder="Order number likho...")
         
-        if st.button("✅ OK", type="primary") and o.strip():
+        c1, c2 = st.columns(2)
+        if c1.button("⏎ Enter", type="primary", use_container_width=True) and o.strip():
+            st.session_state.order = o.strip()
+            st.rerun()
+        if c2.button(f"💾 Save {o}" if o else "💾 Save", use_container_width=True) and o.strip():
             st.session_state.order = o.strip()
             st.rerun()
     
     else:
-        col1, col2 = st.columns([3,1])
-        col1.success(f"📦 Order: **{st.session_state.order}**")
-        if col2.button("🔄 New"):
+        c1, c2 = st.columns([3,1])
+        c1.success(f"📦 **{st.session_state.order}**")
+        if c2.button("🔄 New Order"):
             st.session_state.order = ""
             st.session_state.imgs = []
             st.session_state.k += 1
@@ -63,24 +74,22 @@ with t1:
         st.markdown("---")
         
         c1, c2 = st.columns(2)
-        cam = c1.camera_input("📸", key=f"cam_{len(st.session_state.imgs)}_{st.session_state.k}")
-        files = c2.file_uploader("📁", type=['jpg','jpeg','png'], accept_multiple_files=True, key=f"f_{st.session_state.k}")
+        cam = c1.camera_input("📸 Camera", key=f"c_{len(st.session_state.imgs)}_{st.session_state.k}")
+        files = c2.file_uploader("📁 Upload", type=['jpg','jpeg','png'], accept_multiple_files=True, key=f"f_{st.session_state.k}")
         
-        if cam:
-            if not any(x.getvalue() == cam.getvalue() for x in st.session_state.imgs):
-                st.session_state.imgs.append(cam)
-                st.rerun()
+        if cam and not any(x.getvalue() == cam.getvalue() for x in st.session_state.imgs):
+            st.session_state.imgs.append(cam)
+            st.rerun()
         
         all_imgs = st.session_state.imgs + (files or [])
         
         if all_imgs:
             st.markdown("---")
             cols = st.columns(4)
-            for i, img in enumerate(all_imgs):
+            for i, img in enumerate(all_imgs): 
                 cols[i%4].image(img, caption=i+1, use_container_width=True)
             
             c1, c2 = st.columns(2)
-            
             if c1.button("🗑️ Clear", use_container_width=True):
                 st.session_state.imgs = []
                 st.rerun()
@@ -88,21 +97,13 @@ with t1:
             if c2.button(f"💾 SAVE {st.session_state.order}", type="primary", use_container_width=True):
                 urls = []
                 prog = st.progress(0)
-                stat = st.empty()
                 
                 for i, img in enumerate(all_imgs):
-                    stat.text(f"⏳ {i+1}/{len(all_imgs)}... please wait")
-                    prog.progress((i+1)/len(all_imgs))
-                    
+                    prog.progress((i+1)/len(all_imgs), f"⏳ {i+1}/{len(all_imgs)}")
                     url = upload_img(img.getvalue())
-                    if url:
-                        urls.append(url)
-                        stat.text(f"✅ {i+1}/{len(all_imgs)} uploaded!")
-                    else:
-                        stat.text(f"⚠️ {i+1} failed, trying next...")
+                    if url: urls.append(url)
                 
                 if urls:
-                    stat.text("💾 Saving to sheet...")
                     requests.get(GURL, params={
                         "order_number": st.session_state.order,
                         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -111,13 +112,12 @@ with t1:
                     
                     st.success(f"✅ {len(urls)} photos saved for {st.session_state.order}!")
                     st.balloons()
-                    
                     st.session_state.order = ""
                     st.session_state.imgs = []
                     st.session_state.k += 1
                     st.rerun()
                 else:
-                    st.error("❌ All failed! Try again or check internet.")
+                    st.error("❌ Failed! Check internet.")
 
 with t2:
     if st.button("🔄 Refresh"): st.rerun()
